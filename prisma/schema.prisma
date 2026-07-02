@@ -1,0 +1,2726 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  OWNER
+  MANAGER
+  TECHNICIAN
+  OFFICE_STAFF
+}
+
+enum JobStatus {
+  LEAD
+  ESTIMATE
+  APPROVED
+  SCHEDULED
+  TECH_ASSIGNED
+  TRAVELING
+  ON_SITE
+  IN_PROGRESS
+  WAITING_PARTS
+  PAUSED
+  PENDING_REVIEW
+  COMPLETED
+  INVOICED
+  CLOSED
+  CANCELLED
+  ARCHIVED
+}
+
+enum JobType {
+  STANDARD
+  WARRANTY
+  ESTIMATE_ONLY
+  INSPECTION
+}
+
+enum TimeEntryType {
+  LABOR
+  TRAVEL
+  BREAK
+}
+
+enum PhotoCategory {
+  BEFORE
+  PROGRESS
+  AFTER
+  DAMAGE
+  DOCUMENT
+  OTHER
+}
+
+enum ChecklistItemStatus {
+  PENDING
+  PASS
+  FAIL
+  NA
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  APPROVED
+  DECLINED
+  EXPIRED
+  CONVERTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+  ARCHIVED
+}
+
+enum InvoiceType {
+  STANDARD
+  DEPOSIT
+  PARTIAL
+  RECURRING
+  WARRANTY
+  CREDIT_MEMO
+}
+
+enum RecurringInterval {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
+enum PaymentMethod {
+  CARD
+  ACH
+  CARD_PRESENT
+  CASH
+  CHECK
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  WAITLISTED
+  RESCHEDULED
+}
+
+enum LineItemType {
+  LABOR
+  PART
+  FEE
+  DISCOUNT
+}
+
+enum Plan {
+  STARTER
+  PRO
+  GROWTH
+  ENTERPRISE
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum AuditAction {
+  CREATED
+  UPDATED
+  DELETED
+  VIEWED
+  EXPORTED
+  STATUS_CHANGED
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  PASSWORD_RESET
+  PERMISSION_CHANGED
+}
+
+enum InventoryAdjustmentType {
+  ADD
+  REMOVE
+  JOB_USE
+  PO_RECEIVE
+  CORRECTION
+  WRITE_OFF
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+// ─── Core Tenant Model ───────────────────────────────────────────────────────
+
+model Organization {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique // used in subdomains + URL routing
+
+  // Subscription
+  plan             Plan      @default(STARTER)
+  trialEndsAt      DateTime? @map("trial_ends_at")
+  subscriptionEndsAt DateTime? @map("subscription_ends_at")
+  isActive         Boolean   @default(true) @map("is_active")
+
+  // Stripe Connect (for processing customer payments)
+  stripeAccountId        String? @unique @map("stripe_account_id")
+  stripeAccountOnboarded Boolean @default(false) @map("stripe_account_onboarded")
+
+  // Stripe Billing (for MechanicFlow subscription)
+  stripeCustomerId     String? @unique @map("stripe_customer_id")
+  stripeSubscriptionId String? @unique @map("stripe_subscription_id")
+
+  // Business info
+  timezone     String  @default("America/New_York")
+  currency     String  @default("USD")
+  logoUrl      String? @map("logo_url")
+  phone        String?
+  email        String?
+  website      String?
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city         String?
+  state        String?
+  zip          String?
+  country      String  @default("US")
+
+  // Financial defaults
+  taxRatePct    Decimal @default(0) @map("tax_rate_pct") @db.Decimal(5, 4)
+  taxLabel      String  @default("Tax") @map("tax_label")
+  invoicePrefix String  @default("INV") @map("invoice_prefix")
+  invoiceCounter Int    @default(1000) @map("invoice_counter")
+  estimateCounter Int   @default(1000) @map("estimate_counter")
+  jobCounter    Int     @default(1000) @map("job_counter")
+  laborRateCents Int    @default(0) @map("labor_rate_cents")
+  defaultPaymentTermsDays Int @default(30) @map("default_payment_terms_days")
+
+  // Invoice customization
+  invoiceNotes  String? @map("invoice_notes")
+  invoiceTerms  String? @map("invoice_terms")
+
+  // Feature flags
+  smsNotificationsEnabled   Boolean @default(false) @map("sms_notifications_enabled")
+  emailNotificationsEnabled Boolean @default(true) @map("email_notifications_enabled")
+  onlinePaymentsEnabled     Boolean @default(false) @map("online_payments_enabled")
+  customerPortalEnabled     Boolean @default(true) @map("customer_portal_enabled")
+  portalWelcomeMessage     String? @map("portal_welcome_message")
+  portalAllowBooking       Boolean @default(true) @map("portal_allow_booking")
+  portalAllowChat          Boolean @default(true) @map("portal_allow_chat")
+  portalAllowPhotoUpload   Boolean @default(true) @map("portal_allow_photo_upload")
+  portalRequireOtp         Boolean @default(true) @map("portal_require_otp")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users              User[]
+  customers          Customer[]
+  vehicles           Vehicle[]
+  jobs               Job[]
+  estimates          Estimate[]
+  invoices           Invoice[]
+  maintenanceReminders MaintenanceReminder[]
+  payments           Payment[]
+  appointments       Appointment[]
+  inventoryItems     InventoryItem[]
+  vendors            Vendor[]
+  purchaseOrders     PurchaseOrder[]
+  notifications      Notification[]
+  communicationLogs  CommunicationLog[]
+  auditLogs          AuditLog[]
+  notificationPrefs  NotificationPreference[]
+  tags               Tag[]
+  checklistTemplates   ChecklistTemplate[]
+  estimateTemplates    EstimateTemplate[]
+  subscription         Subscription?
+  stripeConnectAccount StripeConnectAccount?
+  stripeCustomers      StripeCustomer[]
+  inventoryAlerts        InventoryAlert[]
+  technicianAvailability TechnicianAvailability[]
+  technicianTimeOff      TechnicianTimeOff[]
+  locationPings          TechnicianLocationPing[]
+  dispatchEvents         DispatchEvent[]
+  routePlans             RoutePlan[]
+  portalSessions         PortalSession[]
+  portalMessages         PortalMessage[]
+  portalPhotoUploads     PortalPhotoUpload[]
+  portalAuditLogs        PortalAuditLog[]
+  membershipPlans        MembershipPlan[]
+  customerMemberships    CustomerMembership[]
+  membershipPromoCodes   MembershipPromoCode[]
+  loyaltyTransactions    LoyaltyTransaction[]
+  employeeProfiles       EmployeeProfile[]
+  certifications         EmployeeCertification[]
+  clockEntries           EmployeeClockEntry[]
+  performanceReviews     PerformanceReview[]
+  departmentRoles        DepartmentRole[]
+
+  @@index([slug])
+  @@index([isActive, plan])
+  @@map("organizations")
+}
+
+// ─── Users & Sessions ────────────────────────────────────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+
+  email        String
+  fullName     String   @map("full_name")
+  phone        String?
+  avatarUrl    String?  @map("avatar_url")
+  role         UserRole @default(TECHNICIAN)
+  isActive     Boolean  @default(true) @map("is_active")
+
+  // Auth
+  passwordHash String    @map("password_hash")
+  lastLoginAt  DateTime? @map("last_login_at")
+  loginCount   Int       @default(0) @map("login_count")
+
+  // MFA (future)
+  mfaEnabled  Boolean @default(false) @map("mfa_enabled")
+  mfaSecret   String? @map("mfa_secret")
+
+  // Display & calendar
+  color       String?  // hex color for calendar display
+
+  // Employment basics (extended detail in EmployeeProfile)
+  employeeId   String? @map("employee_id")    // badge number / payroll ID
+  position     String? // "Lead Technician" etc.
+  department   String? // "Service" | "Parts" | "Admin"
+  hireDate     DateTime? @map("hire_date") @db.Date
+  employmentStatus String @default("full_time") @map("employment_status")
+  // full_time | part_time | contract | intern | terminated
+
+  // Compensation
+  hourlyRate     Int?  @map("hourly_rate")      // cents
+  salaryYearly   Int?  @map("salary_yearly")    // cents
+  commissionPct  Decimal? @map("commission_pct") @db.Decimal(5,2)
+  overtimeRate   Decimal @default(1.5) @map("overtime_rate") @db.Decimal(4,2)
+
+  // Technician skills (quick flags; full detail in EmployeeProfile)
+  skillLevel     String? @map("skill_level")   // junior | mid | senior | master
+  specialties    String[] @default([])          // ["brakes","electrical","diesel"]
+
+  // Notification preferences
+  notifyJobAssigned      Boolean @default(true) @map("notify_job_assigned")
+  notifyEstimateApproved Boolean @default(true) @map("notify_estimate_approved")
+  notifyInvoicePaid      Boolean @default(true) @map("notify_invoice_paid")
+  notifySmsEnabled       Boolean @default(false) @map("notify_sms_enabled")
+
+  // Performance cache (updated nightly)
+  jobsCompletedCount   Int @default(0) @map("jobs_completed_count")
+  avgJobRating         Decimal? @map("avg_job_rating") @db.Decimal(3,2)
+  comebackRate         Decimal? @map("comeback_rate") @db.Decimal(5,4)  // 0.0-1.0
+  warrantyClaimRate    Decimal? @map("warranty_claim_rate") @db.Decimal(5,4)
+  revenueGeneratedCents Int @default(0) @map("revenue_generated_cents")
+
+  // Real-time dispatch fields
+  dispatchStatus    String @default("offline") @map("dispatch_status")
+  // offline | available | dispatched | traveling | on_site | on_break | busy
+  currentLat        Decimal? @map("current_lat") @db.Decimal(10,7)
+  currentLng        Decimal? @map("current_lng") @db.Decimal(10,7)
+  locationUpdatedAt DateTime? @map("location_updated_at")
+  activeJobId       String?   @map("active_job_id")   // currently working job
+  lastDispatchedAt  DateTime? @map("last_dispatched_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions         Session[]
+  createdJobs      Job[]             @relation("JobCreatedBy")
+  jobAssignments   JobAssignment[]
+  assignedBy       JobAssignment[]   @relation("AssignedByUser")
+  createdEstimates Estimate[]        @relation("EstimateCreatedBy")
+  createdInvoices  Invoice[]         @relation("InvoiceCreatedBy")
+  createdPayments  Payment[]         @relation("PaymentCreatedBy")
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  communicationLogs CommunicationLog[]
+  notificationPrefs NotificationPreference[]
+  timeEntries      TimeEntry[]      @relation("TimeEntryUser")
+  createdPOs             PurchaseOrder[]          @relation("POCreatedBy")
+  technicianAppointments Appointment[]            @relation("TechnicianAppointments")
+  createdAppointments    Appointment[]            @relation("AppointmentCreatedBy")
+  availability           TechnicianAvailability[] @relation("TechnicianAvailability")
+  timeOff                TechnicianTimeOff[]      @relation("TechnicianTimeOff")
+  employeeProfile        EmployeeProfile?
+  certifications         EmployeeCertification[]
+  clockEntries           EmployeeClockEntry[]
+  performanceReviews     PerformanceReview[]      @relation("ReviewSubject")
+  reviewsGiven           PerformanceReview[]      @relation("ReviewedBy")
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([organizationId, role])
+  @@index([organizationId, isActive])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  tokenHash    String   @unique @map("token_hash") // SHA-256 of session token
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt]) // for cleanup job
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ─── Tags (shared across customers, jobs) ───────────────────────────────────
+
+model Tag {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  name           String
+  color          String @default("#6366f1")
+  entityType     String @map("entity_type") // 'customer' | 'job' | 'vehicle'
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name, entityType])
+  @@index([organizationId, entityType])
+  @@map("tags")
+}
+
+// ─── CRM ─────────────────────────────────────────────────────────────────────
+
+model Customer {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  // Identity
+  firstName   String  @map("first_name")
+  lastName    String  @map("last_name")
+  companyName String? @map("company_name")
+  isCommercial Boolean @default(false) @map("is_commercial")
+
+  // Contact
+  email          String?
+  phonePrimary   String? @map("phone_primary")
+  phoneSecondary String? @map("phone_secondary")
+  preferredContact String @default("phone") @map("preferred_contact") // 'phone' | 'email' | 'sms'
+
+  // Address (service address — billing may differ)
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city         String?
+  state        String?
+  zip          String?
+
+  // CRM metadata
+  tags   String[] @default([])
+  source String?  // 'google' | 'referral' | 'repeat' | 'walk-in' | 'website' | 'other'
+  notes  String?
+  doNotContact Boolean @default(false) @map("do_not_contact")
+
+  // Customer portal
+  portalToken String @unique @default(cuid()) @map("portal_token")
+
+  // Computed cache fields (updated by triggers/app logic)
+  lifetimeRevenueCents Int @default(0) @map("lifetime_revenue_cents")
+  totalJobCount        Int @default(0) @map("total_job_count")
+  lastServiceAt        DateTime? @map("last_service_at")
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicles          Vehicle[]
+  jobs              Job[]
+  estimates         Estimate[]
+  invoices          Invoice[]
+  payments          Payment[]
+  appointments      Appointment[]
+  notifications     Notification[]
+  communicationLogs CommunicationLog[]
+  memberships        CustomerMembership[]
+  portalSessions     PortalSession[]
+  portalMessages     PortalMessage[]
+  portalPhotoUploads PortalPhotoUpload[]
+
+  @@index([organizationId])
+  @@index([organizationId, deletedAt])
+  @@index([organizationId, email])
+  @@index([organizationId, phonePrimary])
+  @@index([organizationId, lastName, firstName])
+  @@map("customers")
+}
+
+model Vehicle {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+
+  // Identity
+  year         Int?
+  make         String?
+  model        String?
+  trim         String?
+  vin          String?
+  licensePlate String? @map("license_plate")
+
+  // Colors
+  colorExterior String? @map("color_exterior")
+  colorInterior String? @map("color_interior")
+
+  // Technical specs
+  engine       String? // e.g. "3.5L V6 DOHC"
+  transmission String? // 'automatic' | 'manual' | 'cvt' | 'dct'
+  drivetrain   String? // 'fwd' | 'rwd' | 'awd' | '4wd'
+  fuelType     String? @map("fuel_type") // 'gasoline' | 'diesel' | 'hybrid' | 'electric' | 'phev'
+  cylinders    Int?
+  displacement String? // e.g. "3.5L"
+  horsepower   Int?
+
+  // Service specs
+  oilType      String? @map("oil_type")      // e.g. "5W-30 Full Synthetic"
+  oilCapacityQt Decimal? @map("oil_capacity_qt") @db.Decimal(4,1)
+  tireSize     String? @map("tire_size")     // e.g. "225/65R17"
+  tirePressureFront Int? @map("tire_pressure_front")
+  tirePressureRear  Int? @map("tire_pressure_rear")
+
+  // Mileage tracking
+  mileageLastSeen  Int?      @map("mileage_last_seen")
+  mileageUpdatedAt DateTime? @map("mileage_updated_at")
+  mileageAtPurchase Int?     @map("mileage_at_purchase")
+
+  // Ownership
+  purchaseDate DateTime? @map("purchase_date") @db.Date
+  warrantyExpiry DateTime? @map("warranty_expiry") @db.Date
+  warrantyMiles  Int?      @map("warranty_miles")
+  warrantyNotes  String?   @map("warranty_notes")
+
+  // VIN decode cache
+  vinDecoded    Boolean   @default(false) @map("vin_decoded")
+  vinDecodedAt  DateTime? @map("vin_decoded_at")
+  vinRawData    Json?     @map("vin_raw_data")
+
+  // Photo / docs
+  primaryPhotoUrl String? @map("primary_photo_url")
+
+  // Lifecycle cache
+  lastServiceDate DateTime? @map("last_service_date")
+  nextServiceDate DateTime? @map("next_service_date")
+  nextServiceMiles Int?     @map("next_service_miles")
+  totalSpentCents Int       @default(0) @map("total_spent_cents")
+
+  notes String?
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer            Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  jobs                Job[]
+  estimates           Estimate[]
+  invoices            Invoice[]
+  appointments        Appointment[]
+  maintenanceReminders MaintenanceReminder[]
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, vin])
+  @@index([organizationId, deletedAt])
+  @@index([organizationId, make, model])
+  @@map("vehicles")
+}
+
+// ─── Maintenance Reminders ────────────────────────────────────────────────────
+
+model MaintenanceReminder {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  vehicleId      String @map("vehicle_id")
+
+  serviceType    String  @map("service_type") // 'oil_change'|'brakes'|'tires'|'battery'|'custom'|etc.
+  name           String  // display name, e.g. "Oil Change"
+  notes          String?
+
+  // Interval-based triggers (either/or)
+  intervalMiles  Int? @map("interval_miles")   // e.g. 5000
+  intervalMonths Int? @map("interval_months")  // e.g. 6
+
+  // Last completed
+  lastCompletedAt    DateTime? @map("last_completed_at")
+  lastCompletedMiles Int?      @map("last_completed_miles")
+
+  // Due
+  dueMiles   Int?      @map("due_miles")
+  dueDate    DateTime? @map("due_date") @db.Date
+
+  isActive   Boolean  @default(true) @map("is_active")
+  jobId      String?  @map("job_id") // linked to last completing job
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, vehicleId])
+  @@index([organizationId, dueDate])
+  @@index([organizationId, dueMiles])
+  @@map("maintenance_reminders")
+}
+
+// ─── Jobs ─────────────────────────────────────────────────────────────────────
+
+model Job {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+  vehicleId      String? @map("vehicle_id")
+
+  // Identification
+  jobNumber String @map("job_number") // e.g. WO-1042
+
+  // Content
+  title         String
+  description   String?
+  internalNotes String? @map("internal_notes") // not visible to customer
+  customerNotes String? @map("customer_notes") // visible on invoice/estimate
+
+  // Classification
+  status   JobStatus @default(LEAD)
+  jobType  JobType   @default(STANDARD) @map("job_type")
+  priority Priority  @default(NORMAL)
+
+  // Financials (all in cents)
+  subtotalCents  Int @default(0) @map("subtotal_cents")
+  taxCents       Int @default(0) @map("tax_cents")
+  discountCents  Int @default(0) @map("discount_cents")
+  totalCents     Int @default(0) @map("total_cents")
+
+  // Mileage captured at job creation
+  mileageIn  Int? @map("mileage_in")
+  mileageOut Int? @map("mileage_out")
+
+  // Location / dispatch
+  serviceAddressLine1 String? @map("service_address_line1")
+  serviceCity         String? @map("service_city")
+  serviceState        String? @map("service_state")
+  serviceZip          String? @map("service_zip")
+  serviceLat          Decimal? @map("service_lat") @db.Decimal(10,7)
+  serviceLng          Decimal? @map("service_lng") @db.Decimal(10,7)
+  isEmergency         Boolean @default(false) @map("is_emergency")
+
+  // Dispatch tracking
+  dispatchedAt  DateTime? @map("dispatched_at")
+  travelStartAt DateTime? @map("travel_start_at")
+  arrivedAt     DateTime? @map("arrived_at")
+  etaMinutes    Int?      @map("eta_minutes")       // last computed ETA
+  distanceMiles Decimal?  @map("distance_miles") @db.Decimal(8,2)
+
+  // Timestamps
+  scheduledAt DateTime? @map("scheduled_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  // Ownership
+  createdById String @map("created_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer             Customer              @relation(fields: [customerId], references: [id])
+  vehicle              Vehicle?              @relation(fields: [vehicleId], references: [id])
+  createdBy            User                  @relation("JobCreatedBy", fields: [createdById], references: [id])
+  assignments          JobAssignment[]
+  lineItems            JobLineItem[]
+  estimates            Estimate[]
+  invoices             Invoice[]
+  appointments         Appointment[]
+  inventoryAdjustments InventoryAdjustment[]
+  statusHistory        JobStatusHistory[]
+  timeEntries          TimeEntry[]
+  photos               JobPhoto[]
+  documents            JobDocument[]
+  checklists           JobChecklist[]
+  signature            JobSignature?
+
+  // Extra lifecycle fields
+  onSiteAt    DateTime? @map("on_site_at")
+  pausedAt    DateTime? @map("paused_at")
+  cancelReason String?  @map("cancel_reason")
+
+  @@unique([organizationId, jobNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, customerId])
+  @@index([organizationId, vehicleId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, deletedAt])
+  @@index([organizationId, scheduledAt])
+  @@map("jobs")
+}
+
+model JobStatusHistory {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  jobId          String    @map("job_id")
+  fromStatus     JobStatus? @map("from_status")
+  toStatus       JobStatus @map("to_status")
+  note           String?
+  changedById    String    @map("changed_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_status_history")
+}
+
+model JobAssignment {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  jobId          String   @map("job_id")
+  userId         String   @map("user_id")
+  isLead         Boolean  @default(false) @map("is_lead")
+  assignedAt     DateTime @default(now()) @map("assigned_at")
+  assignedById   String   @map("assigned_by")
+
+  job        Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user       User @relation(fields: [userId], references: [id])
+  assignedBy User @relation("AssignedByUser", fields: [assignedById], references: [id])
+
+  @@unique([jobId, userId])
+  @@index([organizationId, userId])
+  @@index([jobId])
+  @@map("job_assignments")
+}
+
+model JobLineItem {
+  id              String       @id @default(cuid())
+  organizationId  String       @map("organization_id")
+  jobId           String       @map("job_id")
+  itemType        LineItemType @map("item_type")
+  inventoryItemId String?      @map("inventory_item_id")
+
+  description    String
+  quantity       Decimal @default(1) @db.Decimal(10, 2)
+  unitCostCents  Int     @default(0) @map("unit_cost_cents")   // our cost
+  unitPriceCents Int     @default(0) @map("unit_price_cents")  // what we charge
+  totalCents     Int     @default(0) @map("total_cents")
+
+  // Parts-specific
+  supplier       String?
+  markupPct      Decimal? @map("markup_pct") @db.Decimal(5, 2)
+  isBackordered  Boolean  @default(false) @map("is_backordered")
+  backorderEta   DateTime? @map("backorder_eta") @db.Date
+
+  // Labor-specific
+  technicianId   String?  @map("technician_id")
+  laborHours     Decimal? @map("labor_hours") @db.Decimal(6, 2)
+
+  taxable   Boolean @default(true)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  job           Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([jobId])
+  @@index([organizationId, inventoryItemId])
+  @@map("job_line_items")
+}
+
+// ─── Job Time Tracking ────────────────────────────────────────────────────────
+
+model TimeEntry {
+  id             String        @id @default(cuid())
+  organizationId String        @map("organization_id")
+  jobId          String        @map("job_id")
+  userId         String        @map("user_id")
+  type           TimeEntryType @default(LABOR)
+
+  startedAt  DateTime  @map("started_at")
+  endedAt    DateTime? @map("ended_at")
+  durationSeconds Int?  @map("duration_seconds") // computed on stop
+
+  isBillable Boolean @default(true) @map("is_billable")
+  notes      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user User @relation("TimeEntryUser", fields: [userId], references: [id])
+
+  @@index([organizationId, jobId])
+  @@index([organizationId, userId])
+  @@index([jobId, userId, endedAt])
+  @@map("time_entries")
+}
+
+// ─── Job Photos & Videos ──────────────────────────────────────────────────────
+
+model JobPhoto {
+  id             String        @id @default(cuid())
+  organizationId String        @map("organization_id")
+  jobId          String        @map("job_id")
+  uploadedById   String        @map("uploaded_by")
+
+  url          String
+  thumbnailUrl String?  @map("thumbnail_url")
+  category     PhotoCategory @default(OTHER)
+  caption      String?
+  isVideo      Boolean  @default(false) @map("is_video")
+  fileSizeBytes Int?    @map("file_size_bytes")
+  mimeType     String?  @map("mime_type")
+  sortOrder    Int      @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+  @@index([jobId, category])
+  @@map("job_photos")
+}
+
+model JobDocument {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  jobId          String   @map("job_id")
+  uploadedById   String   @map("uploaded_by")
+
+  name         String
+  url          String
+  fileSizeBytes Int?    @map("file_size_bytes")
+  mimeType     String?  @map("mime_type")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+  @@map("job_documents")
+}
+
+// ─── Job Checklists / Inspections ─────────────────────────────────────────────
+
+model JobChecklist {
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+  jobId          String  @map("job_id")
+  templateId     String? @map("template_id")
+
+  name        String
+  isCompleted Boolean @default(false) @map("is_completed")
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  job   Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  items JobChecklistItem[]
+
+  @@index([organizationId, jobId])
+  @@map("job_checklists")
+}
+
+model JobChecklistItem {
+  id          String              @id @default(cuid())
+  checklistId String              @map("checklist_id")
+
+  label       String
+  status      ChecklistItemStatus @default(PENDING)
+  isRequired  Boolean             @default(false) @map("is_required")
+  notes       String?
+  value       String?  // for measurement fields (e.g. "8mm" brake pad)
+  sortOrder   Int                 @default(0) @map("sort_order")
+  completedById String?           @map("completed_by")
+  completedAt DateTime?           @map("completed_at")
+
+  checklist JobChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId])
+  @@map("job_checklist_items")
+}
+
+model ChecklistTemplate {
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+
+  name        String
+  description String?
+  category    String? // 'oil_change' | 'brake_inspection' | etc.
+  isActive    Boolean @default(true) @map("is_active")
+  items       Json    // array of { label, isRequired, sortOrder }
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+  @@map("checklist_templates")
+}
+
+// ─── Job Customer Signature ───────────────────────────────────────────────────
+
+model JobSignature {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  jobId          String   @unique @map("job_id")
+
+  signatureData  String   @map("signature_data") // base64 PNG data URL
+  signedByName   String   @map("signed_by_name")
+  signedAt       DateTime @default(now()) @map("signed_at")
+  ipAddress      String?  @map("ip_address")
+  notes          String?
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("job_signatures")
+}
+
+// ─── Estimates ───────────────────────────────────────────────────────────────
+
+model Estimate {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  jobId          String? @map("job_id")
+  customerId     String @map("customer_id")
+  vehicleId      String? @map("vehicle_id")
+
+  estimateNumber String         @map("estimate_number")
+  status         EstimateStatus @default(DRAFT)
+  title          String
+  notes          String?
+  internalNotes  String?        @map("internal_notes")
+
+  // Financials (cents)
+  subtotalCents Int @default(0) @map("subtotal_cents")
+  taxCents      Int @default(0) @map("tax_cents")
+  discountCents Int @default(0) @map("discount_cents")
+  totalCents    Int @default(0) @map("total_cents")
+
+  // Lifecycle timestamps
+  expiresAt   DateTime? @map("expires_at")
+  sentAt      DateTime? @map("sent_at")
+  viewedAt    DateTime? @map("viewed_at") // when customer opened it
+  approvedAt  DateTime? @map("approved_at")
+  declinedAt  DateTime? @map("declined_at")
+
+  // Customer approval metadata
+  approvedByName String? @map("approved_by_name")
+  approvedIp     String? @map("approved_ip")
+  declineReason  String? @map("decline_reason")
+
+  // Pricing additions
+  depositCents  Int @default(0) @map("deposit_cents")
+  depositPaidAt DateTime? @map("deposit_paid_at")
+  depositNote   String?   @map("deposit_note")
+  warrantyText  String?   @map("warranty_text")
+  couponCode    String?   @map("coupon_code")
+  couponDiscountCents Int @default(0) @map("coupon_discount_cents")
+
+  // Customer-requested changes
+  changeRequestedAt  DateTime? @map("change_requested_at")
+  changeRequestNote  String?   @map("change_request_note")
+
+  // PDF cache
+  pdfUrl         String?   @map("pdf_url")
+  pdfGeneratedAt DateTime? @map("pdf_generated_at")
+
+  // Email/SMS tracking
+  reminderSentAt  DateTime? @map("reminder_sent_at")
+  reminder2SentAt DateTime? @map("reminder2_sent_at")
+
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?               @relation(fields: [jobId], references: [id])
+  customer     Customer           @relation(fields: [customerId], references: [id])
+  vehicle      Vehicle?           @relation(fields: [vehicleId], references: [id])
+  createdBy    User               @relation("EstimateCreatedBy", fields: [createdById], references: [id])
+  lineItems    EstimateLineItem[]
+  views        EstimateView[]
+
+  @@unique([organizationId, estimateNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, customerId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("estimates")
+}
+
+model EstimateLineItem {
+  id              String       @id @default(cuid())
+  organizationId  String       @map("organization_id")
+  estimateId      String       @map("estimate_id")
+  tier            String       @default("standard") // 'good' | 'better' | 'best' | 'standard'
+  itemType        LineItemType @map("item_type")
+  inventoryItemId String?      @map("inventory_item_id")
+  category        String?      // grouping label shown on PDF
+
+  description    String
+  quantity       Decimal @default(1) @db.Decimal(10, 2)
+  unitCostCents  Int     @default(0) @map("unit_cost_cents")
+  unitPriceCents Int     @default(0) @map("unit_price_cents")
+  totalCents     Int     @default(0) @map("total_cents")
+  taxable        Boolean @default(true)
+  warranty       String? // e.g. "12 months / 12,000 miles"
+
+  // Labor-specific
+  laborHours     Decimal? @map("labor_hours") @db.Decimal(6,2)
+  technicianId   String?  @map("technician_id")
+
+  sortOrder      Int     @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  estimate      Estimate       @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([estimateId])
+  @@index([organizationId, inventoryItemId])
+  @@map("estimate_line_items")
+}
+
+// ─── Estimate Templates ───────────────────────────────────────────────────────
+
+model EstimateTemplate {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  name        String
+  description String?
+  category    String?  // 'oil_change' | 'brakes' | 'suspension' | 'transmission' | etc.
+  isActive    Boolean  @default(true) @map("is_active")
+  isGlobal    Boolean  @default(false) @map("is_global") // built-in MechanicFlow templates
+  usageCount  Int      @default(0) @map("usage_count")
+
+  // Serialized line items (applied on create)
+  lineItems Json @map("line_items")
+  // [ { itemType, description, quantity, unitPriceCents, taxable, category, laborHours } ]
+
+  defaultTitle   String? @map("default_title")
+  defaultNotes   String? @map("default_notes")
+  defaultWarranty String? @map("default_warranty")
+
+  createdById String  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, category])
+  @@map("estimate_templates")
+}
+
+// ─── Estimate View Tracking ───────────────────────────────────────────────────
+
+model EstimateView {
+  id         String @id @default(cuid())
+  estimateId String @map("estimate_id")
+
+  ipAddress  String? @map("ip_address")
+  userAgent  String? @map("user_agent")
+  viewedAt   DateTime @default(now()) @map("viewed_at")
+
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+  @@map("estimate_views")
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  jobId          String? @map("job_id")
+  customerId     String @map("customer_id")
+
+  invoiceNumber String        @map("invoice_number")
+  status        InvoiceStatus @default(DRAFT)
+  notes         String?
+  terms         String?
+
+  // Financials (cents)
+  subtotalCents   Int @default(0) @map("subtotal_cents")
+  taxCents        Int @default(0) @map("tax_cents")
+  discountCents   Int @default(0) @map("discount_cents")
+  totalCents      Int @default(0) @map("total_cents")
+  amountPaidCents Int @default(0) @map("amount_paid_cents")
+  balanceCents    Int @default(0) @map("balance_cents") // totalCents - amountPaidCents
+
+  // Invoice type & source
+  invoiceType    InvoiceType @default(STANDARD) @map("invoice_type")
+  estimateId     String?     @map("estimate_id")
+  vehicleId      String?     @map("vehicle_id")
+  warrantyText   String?     @map("warranty_text")
+  poNumber       String?     @map("po_number")    // customer PO reference
+
+  // Deposit tracking
+  depositCents       Int @default(0) @map("deposit_cents")
+  depositPaidCents   Int @default(0) @map("deposit_paid_cents")
+
+  // Recurring
+  isRecurring       Boolean             @default(false) @map("is_recurring")
+  recurringInterval RecurringInterval?  @map("recurring_interval")
+  recurringNextDate DateTime?           @map("recurring_next_date") @db.Date
+  recurringEndDate  DateTime?           @map("recurring_end_date") @db.Date
+  parentInvoiceId   String?             @map("parent_invoice_id")
+
+  // Dates
+  dueDate    DateTime? @map("due_date") @db.Date
+  sentAt     DateTime? @map("sent_at")
+  viewedAt   DateTime? @map("viewed_at")
+  paidAt     DateTime? @map("paid_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  cancelReason String?  @map("cancel_reason")
+
+  // Payment link (for customer self-pay portal)
+  paymentLinkToken String @unique @default(cuid()) @map("payment_link_token")
+
+  // PDF cache
+  pdfUrl         String?   @map("pdf_url")
+  pdfGeneratedAt DateTime? @map("pdf_generated_at")
+
+  // Reminder tracking
+  reminder1SentAt  DateTime? @map("reminder_1_sent_at")
+  reminder2SentAt  DateTime? @map("reminder_2_sent_at")
+  reminder3SentAt  DateTime? @map("reminder_3_sent_at")
+
+  // Download/print tracking
+  downloadCount Int @default(0) @map("download_count")
+  printCount    Int @default(0) @map("print_count")
+
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?               @relation(fields: [jobId], references: [id])
+  customer     Customer           @relation(fields: [customerId], references: [id])
+  vehicle      Vehicle?           @relation(fields: [vehicleId], references: [id])
+  createdBy    User               @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  lineItems    InvoiceLineItem[]
+  payments     Payment[]
+  views        InvoiceView[]
+  events       InvoiceEvent[]
+  childInvoices Invoice[]         @relation("RecurringChildren")
+  parentInvoice Invoice?          @relation("RecurringChildren", fields: [parentInvoiceId], references: [id])
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, customerId])
+  @@index([organizationId, dueDate])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([paymentLinkToken])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  invoiceId      String       @map("invoice_id")
+  jobLineItemId  String?      @map("job_line_item_id")
+  estimateLineItemId String?  @map("estimate_line_item_id")
+
+  itemType       LineItemType @map("item_type")
+  description    String
+  quantity       Decimal      @default(1) @db.Decimal(10, 2)
+  unitCostCents  Int          @default(0) @map("unit_cost_cents")
+  unitPriceCents Int          @default(0) @map("unit_price_cents")
+  totalCents     Int          @default(0) @map("total_cents")
+  taxable        Boolean      @default(true)
+  category       String?
+  warranty       String?
+  laborHours     Decimal?     @map("labor_hours") @db.Decimal(6,2)
+  technicianId   String?      @map("technician_id")
+  sortOrder      Int          @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@map("invoice_line_items")
+}
+
+// ─── Invoice View Tracking ────────────────────────────────────────────────────
+
+model InvoiceView {
+  id         String   @id @default(cuid())
+  invoiceId  String   @map("invoice_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  viewedAt   DateTime @default(now()) @map("viewed_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_views")
+}
+
+// ─── Invoice Event Log (Timeline) ────────────────────────────────────────────
+
+model InvoiceEvent {
+  id         String   @id @default(cuid())
+  invoiceId  String   @map("invoice_id")
+  userId     String?  @map("user_id")
+  eventType  String   @map("event_type")
+  // created|sent|viewed|reminder_sent|paid|partial_paid|refunded|cancelled|downloaded|printed|note
+  note       String?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_events")
+}
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+model Payment {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  invoiceId      String @map("invoice_id")
+  customerId     String @map("customer_id")
+
+  amountCents      Int           @map("amount_cents")
+  method           PaymentMethod
+  status           PaymentStatus @default(PENDING)
+
+  // Stripe core references
+  stripePaymentIntentId String? @unique @map("stripe_payment_intent_id")
+  stripeChargeId        String? @map("stripe_charge_id")
+  stripeCustomerId      String? @map("stripe_customer_id")
+  stripePaymentMethodId String? @map("stripe_payment_method_id")
+
+  // Stripe Connect
+  stripeConnectAccountId String? @map("stripe_connect_account_id")
+  stripeTransferId       String? @map("stripe_transfer_id")
+
+  // Refund tracking
+  stripeRefundId    String?   @map("stripe_refund_id")
+  refundedAt        DateTime? @map("refunded_at")
+  refundAmountCents Int?      @map("refund_amount_cents")
+  refundReason      String?   @map("refund_reason")
+
+  // Platform economics (0.5% of transaction)
+  platformFeeCents     Int @default(0) @map("platform_fee_cents")
+  stripeFeeEstCents    Int @default(0) @map("stripe_fee_est_cents")
+  netRevenueCents      Int @default(0) @map("net_revenue_cents")
+
+  // Idempotency
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  // Metadata
+  receiptUrl  String?  @map("receipt_url")
+  description String?
+  notes       String?
+  metadata    Json?
+
+  // Source tracking
+  source      String? // 'portal' | 'staff' | 'terminal' | 'subscription'
+  ipAddress   String? @map("ip_address")
+
+  processedAt DateTime? @map("processed_at")
+  failedAt    DateTime? @map("failed_at")
+  failReason  String?   @map("fail_reason")
+
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id])
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  createdBy    User         @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([organizationId, invoiceId])
+  @@index([organizationId, status])
+  @@index([organizationId, processedAt(sort: Desc)])
+  @@index([stripePaymentIntentId])
+  @@index([stripeChargeId])
+  @@index([organizationId, customerId])
+  @@map("payments")
+}
+
+// ─── Stripe Subscriptions (MechanicFlow billing) ─────────────────────────────
+
+model Subscription {
+  id             String @id @default(cuid())
+  organizationId String @unique @map("organization_id")
+
+  stripeCustomerId     String  @map("stripe_customer_id")
+  stripeSubscriptionId String  @unique @map("stripe_subscription_id")
+  stripePriceId        String  @map("stripe_price_id")
+  stripeProductId      String  @map("stripe_product_id")
+
+  plan          Plan
+  status        String // active | past_due | canceled | trialing | paused | unpaid
+  interval      String // month | year
+  intervalCount Int    @default(1) @map("interval_count")
+
+  currentPeriodStart DateTime @map("current_period_start")
+  currentPeriodEnd   DateTime @map("current_period_end")
+  trialStart         DateTime? @map("trial_start")
+  trialEnd           DateTime? @map("trial_end")
+  cancelAt           DateTime? @map("cancel_at")
+  canceledAt         DateTime? @map("canceled_at")
+  cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
+
+  // Pricing (cents/month)
+  amountCents Int @map("amount_cents")
+  currency    String @default("usd")
+
+  // Coupon / discount
+  couponId       String? @map("coupon_id")
+  discountPct    Int?    @map("discount_pct")
+
+  // Metadata
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([stripeSubscriptionId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ─── Stripe Connect Accounts (per-shop) ──────────────────────────────────────
+
+model StripeConnectAccount {
+  id             String @id @default(cuid())
+  organizationId String @unique @map("organization_id")
+
+  stripeAccountId   String  @unique @map("stripe_account_id")
+  accountType       String  @default("standard") @map("account_type")
+  country           String  @default("US")
+  currency          String  @default("usd")
+  email             String?
+
+  // Onboarding status
+  chargesEnabled    Boolean @default(false) @map("charges_enabled")
+  payoutsEnabled    Boolean @default(false) @map("payouts_enabled")
+  detailsSubmitted  Boolean @default(false) @map("details_submitted")
+  onboardedAt       DateTime? @map("onboarded_at")
+
+  // Capabilities
+  cardPayments      String @default("inactive") @map("card_payments")
+  transfers         String @default("inactive")
+
+  // Platform fee config (basis points — 50 = 0.5%)
+  platformFeeBps    Int @default(50) @map("platform_fee_bps")
+
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("stripe_connect_accounts")
+}
+
+// ─── Stripe Customers (per customer record) ───────────────────────────────────
+
+model StripeCustomer {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id") // our Customer.id
+
+  stripeCustomerId String @unique @map("stripe_customer_id")
+  email            String?
+  name             String?
+  defaultPaymentMethodId String? @map("default_payment_method_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, customerId])
+  @@index([organizationId, customerId])
+  @@map("stripe_customers")
+}
+
+// ─── Webhook Event Log (idempotency + replay protection) ─────────────────────
+
+model StripeWebhookEvent {
+  id             String   @id @default(cuid())
+  stripeEventId  String   @unique @map("stripe_event_id")
+  type           String
+  organizationId String?  @map("organization_id")
+  processed      Boolean  @default(false)
+  processedAt    DateTime? @map("processed_at")
+  error          String?
+  payload        Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([stripeEventId])
+  @@index([type, processed])
+  @@map("stripe_webhook_events")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WORKFORCE MANAGEMENT SYSTEM
+// Full employee HR records, shift time tracking, certifications, performance.
+// The User model handles auth; EmployeeProfile handles HR detail.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Employee Profile (HR detail, extends User) ───────────────────────────────
+
+model EmployeeProfile {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @unique @map("user_id")
+
+  // Personal
+  firstName    String @map("first_name")
+  lastName     String @map("last_name")
+  middleName   String? @map("middle_name")
+  preferredName String? @map("preferred_name")
+  dateOfBirth  DateTime? @map("date_of_birth") @db.Date
+  gender       String?   // for HR records, optional
+
+  // Contact
+  personalEmail String? @map("personal_email")
+  personalPhone String? @map("personal_phone")
+  workPhone     String? @map("work_phone")
+
+  // Address
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city         String?
+  state        String?
+  zip          String?
+
+  // Emergency contact
+  emergencyName     String? @map("emergency_name")
+  emergencyPhone    String? @map("emergency_phone")
+  emergencyRelation String? @map("emergency_relation")
+  emergencyEmail    String? @map("emergency_email")
+
+  // Employment
+  startDate          DateTime? @map("start_date") @db.Date
+  endDate            DateTime? @map("end_date") @db.Date     // termination date
+  terminationReason  String?   @map("termination_reason")
+  probationEndDate   DateTime? @map("probation_end_date") @db.Date
+  managerUserId      String?   @map("manager_user_id")      // reports to
+
+  // Payroll
+  payrollId          String? @map("payroll_id")
+  payrollProvider    String? @map("payroll_provider")        // "ADP" | "Gusto" | etc.
+  ssn_last4          String? @map("ssn_last4")              // last 4 only, never full
+  bankAccountLast4   String? @map("bank_account_last4")
+  taxWithholdingW4   Json?   @map("tax_withholding_w4")
+
+  // Documents
+  driversLicenseNo     String?   @map("drivers_license_no")
+  driversLicenseState  String?   @map("drivers_license_state")
+  driversLicenseExpiry DateTime? @map("drivers_license_expiry") @db.Date
+  i9Verified           Boolean   @default(false) @map("i9_verified")
+  backgroundCheckDate  DateTime? @map("background_check_date") @db.Date
+
+  // Technician-specific
+  aseCertifications    String[] @default([]) @map("ase_certifications")
+  // ["A1","A2","A3","A4","A5","A6","A7","A8","T1","L1"] etc.
+  preferredJobTypes    String[] @default([]) @map("preferred_job_types")
+  toolInventoryValue   Int?     @map("tool_inventory_value")   // cents
+  uniformSize          String?  @map("uniform_size")
+
+  // Notes & documents
+  notes          String?
+  profilePhotoUrl String? @map("profile_photo_url")
+  documents      Json    @default("[]") @map("documents")
+  // [{name, url, type, uploadedAt}]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, managerUserId])
+  @@map("employee_profiles")
+}
+
+// ─── Employee Certifications ──────────────────────────────────────────────────
+
+model EmployeeCertification {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")
+
+  certType      String @map("cert_type")
+  // ase | oem | safety | epa | state_license | manufacturer | other
+  name          String  // "ASE Master Technician" | "EPA 609" | etc.
+  certNumber    String? @map("cert_number")
+  issuingBody   String? @map("issuing_body")
+  issuedAt      DateTime? @map("issued_at") @db.Date
+  expiresAt     DateTime? @map("expires_at") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  documentUrl   String?   @map("document_url")
+  notes         String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@index([organizationId, expiresAt])
+  @@index([organizationId, certType])
+  @@map("employee_certifications")
+}
+
+// ─── Employee Clock Entries (shift-level, not job-level) ──────────────────────
+
+model EmployeeClockEntry {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")
+
+  clockedInAt   DateTime  @map("clocked_in_at")
+  clockedOutAt  DateTime? @map("clocked_out_at")
+  scheduledIn   DateTime? @map("scheduled_in")    // expected start
+  scheduledOut  DateTime? @map("scheduled_out")   // expected end
+
+  // Computed on clock-out
+  regularMinutes  Int @default(0) @map("regular_minutes")
+  overtimeMinutes Int @default(0) @map("overtime_minutes")
+  breakMinutes    Int @default(0) @map("break_minutes")
+  totalMinutes    Int @default(0) @map("total_minutes")
+
+  // GPS verification
+  clockInLat    Decimal? @map("clock_in_lat")  @db.Decimal(10,7)
+  clockInLng    Decimal? @map("clock_in_lng")  @db.Decimal(10,7)
+  clockOutLat   Decimal? @map("clock_out_lat") @db.Decimal(10,7)
+  clockOutLng   Decimal? @map("clock_out_lng") @db.Decimal(10,7)
+  gpsVerified   Boolean  @default(false) @map("gps_verified")
+
+  // Status
+  status        String @default("open")
+  // open | clocked_out | approved | adjusted | disputed
+
+  isAutoClockOut Boolean @default(false) @map("is_auto_clock_out")
+  notes          String?
+  managerNotes   String? @map("manager_notes")
+  approvedById   String? @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+
+  // Pay period
+  payPeriodStart DateTime? @map("pay_period_start") @db.Date
+  payPeriodEnd   DateTime? @map("pay_period_end") @db.Date
+
+  // Breaks (serialized)
+  breaks Json @default("[]")
+  // [{startedAt, endedAt, durationMinutes, type}]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@index([organizationId, clockedInAt])
+  @@index([organizationId, status])
+  @@index([organizationId, payPeriodStart])
+  @@map("employee_clock_entries")
+}
+
+// ─── Performance Reviews ──────────────────────────────────────────────────────
+
+model PerformanceReview {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")         // subject
+  reviewedById   String @map("reviewed_by")     // reviewer
+
+  reviewPeriod   String @map("review_period")   // "2024-Q1" | "2024-Annual"
+  reviewDate     DateTime @map("review_date") @db.Date
+
+  // Scores (1-5)
+  technicalScore    Int? @map("technical_score")
+  qualityScore      Int? @map("quality_score")
+  efficiencyScore   Int? @map("efficiency_score")
+  customerScore     Int? @map("customer_score")
+  teamworkScore     Int? @map("teamwork_score")
+  overallScore      Decimal? @map("overall_score") @db.Decimal(3,1)
+
+  // Metrics snapshot at time of review
+  jobsCompleted     Int     @default(0) @map("jobs_completed")
+  hoursWorked       Decimal @default(0) @map("hours_worked") @db.Decimal(8,2)
+  revenueGenerated  Int     @default(0) @map("revenue_generated")
+  customerRating    Decimal? @map("customer_rating") @db.Decimal(3,2)
+  comebackRate      Decimal? @map("comeback_rate") @db.Decimal(5,4)
+
+  strengths     String?
+  improvements  String?
+  goals         String?
+  comments      String?
+
+  status        String @default("draft") // draft | shared | acknowledged
+  acknowledgedAt DateTime? @map("acknowledged_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("ReviewSubject",  fields: [userId],     references: [id])
+  reviewedBy   User         @relation("ReviewedBy",     fields: [reviewedById], references: [id])
+
+  @@index([organizationId, userId])
+  @@index([organizationId, reviewDate])
+  @@map("performance_reviews")
+}
+
+// ─── Department / Role Config (custom roles beyond the 4 defaults) ────────────
+
+model DepartmentRole {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  name           String  // "Lead Technician" | "Service Advisor" | "Parts Manager"
+  department     String  // "Service" | "Parts" | "Admin" | "Sales"
+  baseRole       String  // maps to UserRole enum: TECHNICIAN | OFFICE_STAFF | MANAGER
+  color          String? // hex for display
+  description    String?
+  hourlyRateMin  Int?    @map("hourly_rate_min")
+  hourlyRateMax  Int?    @map("hourly_rate_max")
+  isActive       Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, department])
+  @@map("department_roles")
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CUSTOMER PORTAL SYSTEM
+// Authenticated portal sessions, messaging, photo uploads, audit logs.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Portal Session (customer login) ─────────────────────────────────────────
+
+model PortalSession {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+
+  tokenHash      String   @unique @map("token_hash")    // SHA-256 of session token
+  expiresAt      DateTime @map("expires_at")
+  lastActiveAt   DateTime @default(now()) @map("last_active_at")
+
+  // Device / security
+  ipAddress      String? @map("ip_address")
+  userAgent      String? @map("user_agent")
+  deviceName     String? @map("device_name")  // "iPhone 14", "Chrome on Mac"
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([customerId, expiresAt])
+  @@map("portal_sessions")
+}
+
+// ─── Portal OTP (magic-link / one-time code login) ────────────────────────────
+
+model PortalOtp {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+
+  email          String
+  codeHash       String   @map("code_hash")         // SHA-256 of 6-digit OTP
+  expiresAt      DateTime @map("expires_at")
+  usedAt         DateTime? @map("used_at")
+  attempts       Int      @default(0)               // brute-force protection
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([customerId, expiresAt])
+  @@map("portal_otps")
+}
+
+// ─── Portal Messages (customer ↔ shop chat) ──────────────────────────────────
+
+model PortalMessage {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+
+  // Who sent it
+  senderType    String @map("sender_type") // "customer" | "staff"
+  senderId      String @map("sender_id")   // customerId or userId
+
+  body          String
+  attachmentUrl String? @map("attachment_url")
+  attachmentType String? @map("attachment_type") // "image" | "document"
+
+  // Threading
+  jobId         String? @map("job_id")
+  isRead        Boolean @default(false) @map("is_read")
+  readAt        DateTime? @map("read_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId, customerId, createdAt])
+  @@index([organizationId, isRead])
+  @@map("portal_messages")
+}
+
+// ─── Portal Photo Upload ──────────────────────────────────────────────────────
+
+model PortalPhotoUpload {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+
+  url           String
+  thumbnailUrl  String? @map("thumbnail_url")
+  fileName      String  @map("file_name")
+  fileSizeBytes Int     @map("file_size_bytes")
+  mimeType      String  @map("mime_type")
+
+  // Context
+  vehicleId     String? @map("vehicle_id")
+  jobId         String? @map("job_id")
+  caption       String?
+  category      String? // "damage" | "issue" | "before" | "after" | "receipt"
+
+  reviewedAt    DateTime? @map("reviewed_at")
+  reviewedById  String?   @map("reviewed_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, jobId])
+  @@map("portal_photo_uploads")
+}
+
+// ─── Portal Audit Log ────────────────────────────────────────────────────────
+
+model PortalAuditLog {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+
+  action        String   // "login" | "view_invoice" | "pay_invoice" | "approve_estimate" |
+                         // "book_appointment" | "send_message" | "upload_photo" |
+                         // "cancel_membership" | "update_payment_method" | "download_receipt"
+  resourceType  String?  @map("resource_type")
+  resourceId    String?  @map("resource_id")
+  metadata      Json?
+
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  success       Boolean  @default(true)
+  errorMessage  String?  @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, customerId, createdAt])
+  @@index([organizationId, action])
+  @@map("portal_audit_logs")
+}
+// ═══════════════════════════════════════════════════════════════════════════════
+// DISPATCH SYSTEM
+// Real-time technician tracking, job routing, ETA calculations.
+// Google Maps API-ready: activates when NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is set.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Technician Location Ping (GPS history) ───────────────────────────────────
+
+model TechnicianLocationPing {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")
+
+  lat       Decimal @db.Decimal(10,7)
+  lng       Decimal @db.Decimal(10,7)
+  accuracy  Decimal? @db.Decimal(8,2)  // meters
+  heading   Decimal? @db.Decimal(5,2)  // degrees 0-360
+  speed     Decimal? @db.Decimal(8,2)  // km/h
+  altitude  Decimal? @db.Decimal(8,2)
+
+  jobId     String? @map("job_id")
+  source    String @default("mobile") // mobile | web | manual
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, recordedAt])
+  @@index([organizationId, jobId])
+  @@index([recordedAt]) // for purging old pings
+  @@map("technician_location_pings")
+}
+
+// ─── Dispatch Event Log ───────────────────────────────────────────────────────
+
+model DispatchEvent {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  eventType  String @map("event_type")
+  // job_created | job_assigned | tech_dispatched | tech_traveling |
+  // tech_arrived | job_started | job_completed | job_reassigned |
+  // emergency_declared | eta_updated | location_update
+
+  jobId      String?  @map("job_id")
+  userId     String?  @map("user_id")        // technician affected
+  actorId    String?  @map("actor_id")       // who triggered (dispatcher)
+
+  payload    Json     // event-specific data
+  priority   String   @default("normal")     // normal | high | emergency
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, jobId])
+  @@index([organizationId, userId])
+  @@map("dispatch_events")
+}
+
+// ─── Route Plan (computed route for a job) ────────────────────────────────────
+
+model RoutePlan {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  jobId          String @unique @map("job_id")
+  userId         String @map("user_id")         // assigned technician
+
+  // Origin (technician location at time of dispatch)
+  originLat  Decimal @map("origin_lat") @db.Decimal(10,7)
+  originLng  Decimal @map("origin_lng") @db.Decimal(10,7)
+
+  // Destination (job service location)
+  destLat    Decimal @map("dest_lat") @db.Decimal(10,7)
+  destLng    Decimal @map("dest_lng") @db.Decimal(10,7)
+  destAddress String? @map("dest_address")
+
+  // Computed metrics
+  distanceMiles  Decimal @map("distance_miles") @db.Decimal(8,2)
+  durationMins   Int     @map("duration_mins")
+  etaAt          DateTime @map("eta_at")
+
+  // Google Maps data (null until Maps API key is set)
+  googlePolyline String?  @map("google_polyline")  // encoded polyline
+  googleRouteId  String?  @map("google_route_id")
+  trafficModel   String?  @map("traffic_model")     // best_guess|pessimistic|optimistic
+  hasTrafficData Boolean  @default(false) @map("has_traffic_data")
+
+  computedAt DateTime @default(now()) @map("computed_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@map("route_plans")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBERSHIP & SERVICE PLAN SYSTEM
+// Customer-facing recurring revenue for mechanic shops.
+// Completely separate from the Subscription model (which is MechanicFlow billing).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Membership Plan (the product shops sell) ─────────────────────────────────
+
+model MembershipPlan {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  // Identity
+  name        String
+  slug        String   // URL-friendly, used in portal
+  description String?
+  color       String?  // hex for UI card
+  icon        String?  // emoji or icon name
+  tier        Int      @default(0) // 0=bronze,1=silver,2=gold etc for ordering
+
+  // Pricing (cents)
+  monthlyPriceCents Int  @default(0) @map("monthly_price_cents")
+  yearlyPriceCents  Int  @default(0) @map("yearly_price_cents")
+  enrollmentFeeCents Int @default(0) @map("enrollment_fee_cents")
+  cancellationFeeCents Int @default(0) @map("cancellation_fee_cents")
+
+  // Stripe (created per connected account when shop enables memberships)
+  stripeProductId         String? @map("stripe_product_id")
+  stripePriceIdMonthly    String? @map("stripe_price_id_monthly")
+  stripePriceIdYearly     String? @map("stripe_price_id_yearly")
+
+  // Trial
+  trialDays Int @default(0) @map("trial_days")
+
+  // Limits
+  maxVehicles Int @default(1) @map("max_vehicles")
+  maxMembers  Int @default(1) @map("max_members") // for family/fleet plans
+
+  // Tax
+  taxable     Boolean @default(true)
+  taxCode     String? @map("tax_code")
+
+  // Status
+  status      String @default("active") // active | paused | archived
+
+  // Display order & public visibility
+  sortOrder   Int     @default(0) @map("sort_order")
+  isPublic    Boolean @default(true) @map("is_public") // visible on booking portal
+
+  // Benefits (serialized array of MembershipBenefit objects)
+  benefits    Json    @default("[]")
+  // [{type, name, description, limitType, limitValue, interval, discountPct, discountCents}]
+
+  // Loyalty
+  loyaltyPointsPerDollar Int @default(0) @map("loyalty_points_per_dollar")
+
+  // Metadata
+  metadata    Json?
+  notes       String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships   CustomerMembership[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+  @@index([organizationId, tier])
+  @@map("membership_plans")
+}
+
+// ─── Customer Membership (a customer's subscription to a plan) ────────────────
+
+model CustomerMembership {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+  planId         String @map("plan_id")
+
+  // Status lifecycle
+  status String @default("active")
+  // active | trialing | past_due | paused | cancelled | expired | pending
+
+  // Stripe
+  stripeSubscriptionId   String? @unique @map("stripe_subscription_id")
+  stripeCustomerId       String? @map("stripe_customer_id")
+  stripePriceId          String? @map("stripe_price_id")
+
+  // Billing
+  billingInterval String @default("month") @map("billing_interval") // month | year
+  amountCents     Int    @map("amount_cents")
+  currency        String @default("usd")
+
+  // Dates
+  startedAt          DateTime  @map("started_at")
+  currentPeriodStart DateTime  @map("current_period_start")
+  currentPeriodEnd   DateTime  @map("current_period_end")
+  trialStart         DateTime? @map("trial_start")
+  trialEnd           DateTime? @map("trial_end")
+  pausedAt           DateTime? @map("paused_at")
+  resumesAt          DateTime? @map("resumes_at")
+  cancelledAt        DateTime? @map("cancelled_at")
+  cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
+  cancelReason       String?   @map("cancel_reason")
+
+  // Grace period (days after payment failure before suspension)
+  gracePeriodEndsAt  DateTime? @map("grace_period_ends_at")
+
+  // Enrollment
+  enrollmentFeePaidCents Int @default(0) @map("enrollment_fee_paid_cents")
+  promoCode              String? @map("promo_code")
+  discountPct            Int     @default(0) @map("discount_pct")
+  discountCents          Int     @default(0) @map("discount_cents")
+  referredByCustomerId   String? @map("referred_by_customer_id")
+
+  // Vehicles on this membership
+  vehicleIds String[] @default([]) @map("vehicle_ids")
+
+  // Lifecycle totals (cached)
+  totalPaidCents   Int @default(0) @map("total_paid_cents")
+  totalSavedCents  Int @default(0) @map("total_saved_cents")
+  totalJobsOnPlan  Int @default(0) @map("total_jobs_on_plan")
+  renewalCount     Int @default(0) @map("renewal_count")
+
+  // Loyalty
+  loyaltyPointsBalance Int @default(0) @map("loyalty_points_balance")
+  loyaltyPointsLifetime Int @default(0) @map("loyalty_points_lifetime")
+
+  // Notes
+  internalNotes String? @map("internal_notes")
+  metadata      Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer           @relation(fields: [customerId], references: [id])
+  plan         MembershipPlan     @relation(fields: [planId], references: [id])
+  benefitUsage MembershipBenefitUsage[]
+  payments     MembershipPayment[]
+  events       MembershipEvent[]
+
+  @@unique([organizationId, customerId, stripeSubscriptionId])
+  @@index([organizationId, status])
+  @@index([organizationId, customerId])
+  @@index([organizationId, planId])
+  @@index([stripeSubscriptionId])
+  @@index([currentPeriodEnd])
+  @@map("customer_memberships")
+}
+
+// ─── Benefit Usage Tracking ───────────────────────────────────────────────────
+
+model MembershipBenefitUsage {
+  id           String @id @default(cuid())
+  membershipId String @map("membership_id")
+  organizationId String @map("organization_id")
+
+  benefitKey   String @map("benefit_key")  // matches plan benefit id
+  benefitName  String @map("benefit_name")
+  usedAt       DateTime @default(now()) @map("used_at")
+  periodStart  DateTime @map("period_start") // which billing period
+  periodEnd    DateTime @map("period_end")
+
+  quantityUsed Decimal @default(1) @map("quantity_used") @db.Decimal(8,2)
+  valueCents   Int     @default(0) @map("value_cents") // dollar value saved
+
+  // Reference to the job/invoice it was applied on
+  jobId        String? @map("job_id")
+  invoiceId    String? @map("invoice_id")
+  appliedById  String? @map("applied_by") // user who applied
+
+  notes        String?
+
+  membership   CustomerMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, periodStart])
+  @@index([organizationId, benefitKey])
+  @@index([jobId])
+  @@map("membership_benefit_usage")
+}
+
+// ─── Membership Payment History ───────────────────────────────────────────────
+
+model MembershipPayment {
+  id           String @id @default(cuid())
+  membershipId String @map("membership_id")
+  organizationId String @map("organization_id")
+
+  stripeInvoiceId   String? @unique @map("stripe_invoice_id")
+  stripePaymentIntentId String? @map("stripe_payment_intent_id")
+
+  amountCents   Int    @map("amount_cents")
+  currency      String @default("usd")
+  status        String // succeeded | failed | refunded | pending
+  failReason    String? @map("fail_reason")
+
+  periodStart   DateTime @map("period_start")
+  periodEnd     DateTime @map("period_end")
+
+  paidAt        DateTime? @map("paid_at")
+  failedAt      DateTime? @map("failed_at")
+  refundedAt    DateTime? @map("refunded_at")
+  refundCents   Int @default(0) @map("refund_cents")
+
+  receiptUrl    String? @map("receipt_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  membership CustomerMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId])
+  @@index([organizationId, status])
+  @@index([stripeInvoiceId])
+  @@map("membership_payments")
+}
+
+// ─── Membership Event Log (timeline) ─────────────────────────────────────────
+
+model MembershipEvent {
+  id           String @id @default(cuid())
+  membershipId String @map("membership_id")
+  organizationId String @map("organization_id")
+
+  eventType    String @map("event_type")
+  // created | renewed | upgraded | downgraded | paused | resumed |
+  // cancelled | payment_succeeded | payment_failed | benefit_redeemed |
+  // plan_changed | trial_started | trial_ended | grace_period_started
+
+  description  String
+  metadata     Json?
+  performedById String? @map("performed_by")
+  performedByCustomer Boolean @default(false) @map("performed_by_customer")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  membership CustomerMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, createdAt])
+  @@index([organizationId, eventType])
+  @@map("membership_events")
+}
+
+// ─── Loyalty Points Transactions ──────────────────────────────────────────────
+
+model LoyaltyTransaction {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+  membershipId   String? @map("membership_id")
+
+  type        String // earn | redeem | expire | bonus | referral | adjustment
+  points      Int    // positive = earn, negative = redeem/expire
+  balance     Int    // running balance after transaction
+  description String
+  expiresAt   DateTime? @map("expires_at")
+
+  jobId     String? @map("job_id")
+  invoiceId String? @map("invoice_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, createdAt])
+  @@map("loyalty_transactions")
+}
+
+// ─── Membership Promo Codes ────────────────────────────────────────────────────
+
+model MembershipPromoCode {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  code            String
+  description     String?
+  discountType    String @map("discount_type") // pct | flat | trial_days | first_month_free
+  discountPct     Int    @default(0) @map("discount_pct")
+  discountCents   Int    @default(0) @map("discount_cents")
+  trialDaysBonus  Int    @default(0) @map("trial_days_bonus")
+
+  // Restrictions
+  applicablePlanIds String[] @default([]) @map("applicable_plan_ids") // empty = all plans
+  maxRedemptions    Int?     @map("max_redemptions")
+  redemptionCount   Int      @default(0) @map("redemption_count")
+  maxPerCustomer    Int      @default(1) @map("max_per_customer")
+
+  // Dates
+  validFrom  DateTime  @map("valid_from")
+  validUntil DateTime? @map("valid_until")
+
+  isActive   Boolean @default(true) @map("is_active")
+
+  stripePromotionCodeId String? @map("stripe_promotion_code_id")
+  stripeCouponId        String? @map("stripe_coupon_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@map("membership_promo_codes")
+}
+
+
+// ─── Scheduling ───────────────────────────────────────────────────────────────
+
+model Appointment {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  jobId          String? @map("job_id")
+  customerId     String  @map("customer_id")
+  vehicleId      String? @map("vehicle_id")
+  technicianId   String? @map("technician_id") // null = unassigned
+
+  title        String
+  description  String?
+  status       AppointmentStatus @default(SCHEDULED)
+  appointmentType String @default("service") @map("appointment_type")
+  // service | estimate | pickup | delivery | inspection | emergency | follow_up
+
+  priority String @default("normal") // low | normal | high | emergency
+  color    String? // override technician color for this appt
+
+  startsAt DateTime @map("starts_at")
+  endsAt   DateTime @map("ends_at")
+  allDay   Boolean  @default(false) @map("all_day")
+
+  // Recurring
+  isRecurring       Boolean  @default(false) @map("is_recurring")
+  recurringRule     String?  @map("recurring_rule")  // RRULE string (RFC 5545)
+  recurringParentId String?  @map("recurring_parent_id")
+  recurringEnd      DateTime? @map("recurring_end") @db.Date
+
+  // Location
+  locationType    String  @default("shop") @map("location_type") // shop | mobile | pickup | dropoff
+  locationAddress String? @map("location_address")
+  locationLat     Decimal? @map("location_lat") @db.Decimal(10, 7)
+  locationLng     Decimal? @map("location_lng") @db.Decimal(10, 7)
+
+  // Duration & buffer
+  estimatedDurationMins Int  @default(60)  @map("estimated_duration_mins")
+  travelTimeMins        Int  @default(0)   @map("travel_time_mins")
+  bufferAfterMins       Int  @default(0)   @map("buffer_after_mins")
+
+  // Waiting list
+  isWaitlisted    Boolean @default(false) @map("is_waitlisted")
+  waitlistPosition Int?   @map("waitlist_position")
+
+  // Google Calendar sync (architecture-ready, activated when credentials added)
+  googleEventId        String? @unique @map("google_event_id")
+  googleCalendarId     String? @map("google_calendar_id")
+  googleSyncedAt       DateTime? @map("google_synced_at")
+  googleSyncError      String?   @map("google_sync_error")
+
+  // Customer notifications
+  confirmationSentAt  DateTime? @map("confirmation_sent_at")
+  reminder24hSentAt   DateTime? @map("reminder_24h_sent_at")
+  reminder1hSentAt    DateTime? @map("reminder_1h_sent_at")
+  customerConfirmedAt DateTime? @map("customer_confirmed_at")
+
+  // Cancellation
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  // Internal
+  internalNotes String? @map("internal_notes")
+  notes         String? // customer-visible notes
+
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job             Job?         @relation(fields: [jobId], references: [id])
+  customer        Customer     @relation(fields: [customerId], references: [id])
+  vehicle         Vehicle?     @relation(fields: [vehicleId], references: [id])
+  technician      User?        @relation("TechnicianAppointments", fields: [technicianId], references: [id])
+  createdBy       User         @relation("AppointmentCreatedBy", fields: [createdById], references: [id])
+  recurringParent Appointment? @relation("RecurringChildren", fields: [recurringParentId], references: [id])
+  recurringChildren Appointment[] @relation("RecurringChildren")
+
+  @@index([organizationId, technicianId, startsAt])
+  @@index([organizationId, startsAt, endsAt])
+  @@index([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([organizationId, isWaitlisted])
+  @@index([googleEventId])
+  @@map("appointments")
+}
+
+// ─── Technician Availability ──────────────────────────────────────────────────
+
+model TechnicianAvailability {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")
+
+  dayOfWeek Int // 0=Sun, 1=Mon, ... 6=Sat (-1 = specific date override)
+  date      DateTime? @db.Date // for specific date overrides
+
+  isAvailable Boolean @default(true) @map("is_available")
+  startTime   String? @map("start_time") // "08:00" HH:mm
+  endTime     String? @map("end_time")   // "17:00" HH:mm
+  breakStart  String? @map("break_start")
+  breakEnd    String? @map("break_end")
+  maxJobs     Int?    @map("max_jobs") // capacity limit per day
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("TechnicianAvailability", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek, date])
+  @@index([organizationId, userId])
+  @@index([organizationId, date])
+  @@map("technician_availability")
+}
+
+// ─── Technician Time Off ──────────────────────────────────────────────────────
+
+model TechnicianTimeOff {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")
+
+  title     String
+  reason    String? // vacation | sick | training | personal
+  startsAt  DateTime @map("starts_at")
+  endsAt    DateTime @map("ends_at")
+  allDay    Boolean  @default(true) @map("all_day")
+  approved  Boolean  @default(false)
+  approvedById String? @map("approved_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("TechnicianTimeOff", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@index([organizationId, startsAt])
+  @@map("technician_time_off")
+}
+
+// ─── Inventory ────────────────────────────────────────────────────────────────
+
+model InventoryItem {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  vendorId       String? @map("vendor_id")
+
+  // Identification
+  partNumber   String? @map("part_number")
+  sku          String? // internal stock-keeping unit
+  barcode      String? // UPC / EAN / QR
+  name         String
+  description  String?
+  category     String?
+  manufacturer String?
+  brand        String?
+  model        String? // compatible vehicle model
+  notes        String?
+
+  // Pricing (cents)
+  unitCostCents  Int      @default(0)    @map("unit_cost_cents")
+  sellPriceCents Int      @default(0)    @map("sell_price_cents")
+  markupPct      Decimal? @map("markup_pct")   @db.Decimal(5, 2)
+  taxable        Boolean  @default(true)
+
+  // Stock levels
+  quantityOnHand   Decimal  @default(0)  @map("quantity_on_hand")   @db.Decimal(10, 2)
+  quantityReserved Decimal  @default(0)  @map("quantity_reserved")  @db.Decimal(10, 2)
+  reorderPoint     Decimal? @map("reorder_point")    @db.Decimal(10, 2)
+  reorderQuantity  Decimal? @map("reorder_quantity") @db.Decimal(10, 2)
+  maxStock         Decimal? @map("max_stock")        @db.Decimal(10, 2)
+  unitOfMeasure    String   @default("each")         @map("unit_of_measure")
+
+  // Location
+  location    String? // shelf/bin (e.g. "A-12-3")
+  aisle       String?
+  warehouseId String? @map("warehouse_id")
+
+  // Warranty
+  warrantyMonths Int? @map("warranty_months")
+  warrantyNotes  String? @map("warranty_notes")
+
+  // Media
+  primaryImageUrl String? @map("primary_image_url")
+
+  // Lifecycle cache
+  lastUsedAt     DateTime? @map("last_used_at")
+  totalUsedQty   Decimal   @default(0) @map("total_used_qty")   @db.Decimal(10, 2)
+  totalUsedCents Int       @default(0) @map("total_used_cents")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization      Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor            Vendor?               @relation(fields: [vendorId], references: [id])
+  adjustments       InventoryAdjustment[]
+  jobLineItems      JobLineItem[]
+  estimateLineItems EstimateLineItem[]
+  alerts            InventoryAlert[]
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, category])
+  @@index([organizationId, partNumber])
+  @@index([organizationId, sku])
+  @@index([organizationId, barcode])
+  @@index([organizationId, quantityOnHand])
+  @@index([organizationId, lastUsedAt])
+  @@map("inventory_items")
+}
+
+// ─── Inventory Alerts ─────────────────────────────────────────────────────────
+
+model InventoryAlert {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  inventoryItemId String   @map("inventory_item_id")
+
+  alertType  String   @map("alert_type") // low_stock | out_of_stock | overstock | warranty_expiry
+  message    String
+  isRead     Boolean  @default(false) @map("is_read")
+  resolvedAt DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isRead])
+  @@index([organizationId, alertType])
+  @@map("inventory_alerts")
+}
+
+model InventoryAdjustment {
+  id              String                  @id @default(cuid())
+  organizationId  String                  @map("organization_id")
+  inventoryItemId String                  @map("inventory_item_id")
+  adjustmentType  InventoryAdjustmentType @map("adjustment_type")
+
+  quantityDelta  Decimal @map("quantity_delta") @db.Decimal(10, 2) // positive or negative
+  quantityBefore Decimal @map("quantity_before") @db.Decimal(10, 2)
+  quantityAfter  Decimal @map("quantity_after") @db.Decimal(10, 2)
+
+  unitCostCents   Int? @map("unit_cost_cents") // cost at time of adjustment
+  totalCostCents  Int? @map("total_cost_cents") // delta * unitCost
+
+  jobId           String? @map("job_id")
+  purchaseOrderId String? @map("purchase_order_id")
+  notes           String?
+
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  job           Job?          @relation(fields: [jobId], references: [id])
+
+  @@index([organizationId, inventoryItemId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([jobId])
+  @@map("inventory_adjustments")
+}
+
+model Vendor {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+
+  name          String
+  contactName   String? @map("contact_name")
+  email         String?
+  phone         String?
+  website       String?
+  accountNumber String? @map("account_number")
+  taxId         String? @map("tax_id")
+  paymentTerms  String? @map("payment_terms") // Net30 | Net60 | COD
+  currency      String  @default("USD")
+  leadTimeDays  Int?    @map("lead_time_days")
+  rating        Int?    // 1-5 star rating
+  isPreferred   Boolean @default(false) @map("is_preferred")
+  notes         String?
+  isActive      Boolean @default(true) @map("is_active")
+
+  // Address
+  addressLine1  String? @map("address_line1")
+  city          String?
+  state         String?
+  zip           String?
+
+  // Lifetime stats (updated on PO receive)
+  totalSpentCents Int @default(0) @map("total_spent_cents")
+  totalOrders     Int @default(0) @map("total_orders")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inventoryItems InventoryItem[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, isPreferred])
+  @@map("vendors")
+}
+
+model PurchaseOrder {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  vendorId       String @map("vendor_id")
+
+  poNumber       String              @map("po_number")
+  status         PurchaseOrderStatus @default(DRAFT)
+  subtotalCents  Int                 @default(0) @map("subtotal_cents")
+  shippingCents  Int                 @default(0) @map("shipping_cents")
+  taxCents       Int                 @default(0) @map("tax_cents")
+  totalCents     Int                 @default(0) @map("total_cents")
+
+  // Lifecycle
+  orderedAt    DateTime? @map("ordered_at")
+  expectedAt   DateTime? @map("expected_at") @db.Date
+  receivedAt   DateTime? @map("received_at")
+  approvedAt   DateTime? @map("approved_at")
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  // Shipping
+  shippingMethod  String? @map("shipping_method")
+  trackingNumber  String? @map("tracking_number")
+  vendorReference String? @map("vendor_reference")
+
+  notes          String?
+  internalNotes  String? @map("internal_notes")
+  createdById    String  @map("created_by")
+  approvedById   String? @map("approved_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor       Vendor              @relation(fields: [vendorId], references: [id])
+  lineItems    PurchaseOrderItem[]
+  createdBy    User                @relation("POCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([organizationId, poNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, vendorId])
+  @@index([organizationId, orderedAt])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String @id @default(cuid())
+  purchaseOrderId String @map("purchase_order_id")
+  inventoryItemId String? @map("inventory_item_id")
+
+  description      String
+  quantityOrdered  Decimal @map("quantity_ordered") @db.Decimal(10, 2)
+  quantityReceived Decimal @default(0) @map("quantity_received") @db.Decimal(10, 2)
+  unitCostCents    Int     @map("unit_cost_cents")
+  totalCents       Int     @map("total_cents")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+model NotificationPreference {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String @map("user_id")
+
+  eventType String @map("event_type") // 'job_assigned' | 'estimate_approved' | etc.
+  channel   NotificationChannel
+  enabled   Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventType, channel])
+  @@index([organizationId, userId])
+  @@map("notification_preferences")
+}
+
+model Notification {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String? @map("user_id")    // null = customer notification
+  customerId     String? @map("customer_id") // null = staff notification
+
+  type    String              // 'job_assigned' | 'invoice_sent' | etc.
+  channel NotificationChannel
+  subject String?
+  body    String
+
+  status        NotificationStatus @default(PENDING)
+  sentAt        DateTime?          @map("sent_at")
+  deliveredAt   DateTime?          @map("delivered_at")
+  failedAt      DateTime?          @map("failed_at")
+  failureReason String?            @map("failure_reason")
+  retryCount    Int                @default(0) @map("retry_count")
+
+  // Polymorphic reference
+  referenceType String? @map("reference_type") // 'job' | 'invoice' | 'estimate' | 'appointment'
+  referenceId   String? @map("reference_id")
+
+  // Read tracking (for in-app)
+  readAt DateTime? @map("read_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId, userId, readAt])
+  @@index([organizationId, status])
+  @@index([referenceType, referenceId])
+  @@map("notifications")
+}
+
+model CommunicationLog {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  customerId     String @map("customer_id")
+  userId         String? @map("user_id") // who logged it
+
+  type      String  // 'call' | 'sms' | 'email' | 'in_person' | 'note'
+  direction String? // 'inbound' | 'outbound'
+  subject   String?
+  body      String?
+
+  referenceType String? @map("reference_type")
+  referenceId   String? @map("reference_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("communication_logs")
+}
+
+// ─── Audit Logs (append-only) ─────────────────────────────────────────────────
+
+model AuditLog {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  userId         String? @map("user_id") // null for system actions
+
+  action       AuditAction
+  resourceType String      @map("resource_type")
+  resourceId   String      @map("resource_id")
+
+  // Diff: { field: [oldValue, newValue] }
+  changes Json?
+
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+  metadata  Json?   // any extra context
+
+  createdAt DateTime @default(now()) @map("created_at")
+  // Note: NO updatedAt — this table is append-only
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, resourceType, resourceId])
+  @@index([organizationId, userId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, action])
+  @@map("audit_logs")
+}
