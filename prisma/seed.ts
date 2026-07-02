@@ -84,7 +84,6 @@ async function main() {
       phone: "(512) 555-0101",
       role: UserRole.OWNER,
       passwordHash: ownerPassword,
-      color: "#6366f1",
       notifyJobAssigned: true,
       notifyEstimateApproved: true,
       notifyInvoicePaid: true,
@@ -100,7 +99,6 @@ async function main() {
       phone: "(512) 555-0102",
       role: UserRole.MANAGER,
       passwordHash: managerPassword,
-      color: "#0ea5e9",
     },
   });
 
@@ -113,7 +111,6 @@ async function main() {
       phone: "(512) 555-0103",
       role: UserRole.TECHNICIAN,
       passwordHash: tech1Password,
-      color: "#22c55e",
       hourlyRate: 3500, // $35/hr cost
     },
   });
@@ -127,7 +124,6 @@ async function main() {
       phone: "(512) 555-0104",
       role: UserRole.TECHNICIAN,
       passwordHash: tech2Password,
-      color: "#f59e0b",
       hourlyRate: 3000,
     },
   });
@@ -302,7 +298,6 @@ async function main() {
       organizationId: org.id,
       customerId: customer2.id,
       year: 2021, make: "Honda", model: "CR-V", trim: "EX-L",
-      color: "Sonic Gray Pearl",
       fuelType: "gasoline", mileageLastSeen: 31200,
     },
   });
@@ -325,7 +320,6 @@ async function main() {
       organizationId: org.id,
       customerId: customer3.id,
       year: 2017, make: "Ford", model: "Escape", trim: "SE",
-      color: "White Platinum",
       fuelType: "gasoline", mileageLastSeen: 74800,
     },
   });
@@ -348,7 +342,6 @@ async function main() {
       organizationId: org.id,
       customerId: customer4.id,
       year: 2020, make: "Subaru", model: "Outback", trim: "Limited",
-      color: "Magnetite Gray", vin: "4S4BSANC8L3251477",
       fuelType: "gasoline", mileageLastSeen: 42300,
     },
   });
@@ -374,7 +367,6 @@ async function main() {
       organizationId: org.id,
       customerId: customer5.id,
       year: 2021, make: "Chevrolet", model: "Silverado 2500HD", trim: "Work Truck",
-      color: "White", licensePlate: "TX-FLEET1",
       fuelType: "gasoline", mileageLastSeen: 58900,
     },
   });
