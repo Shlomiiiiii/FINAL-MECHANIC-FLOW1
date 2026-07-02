@@ -267,7 +267,7 @@ async function main() {
       organizationId: org.id,
       customerId: customer1.id,
       year: 2019, make: "Toyota", model: "Camry", trim: "XSE",
-      color: "Midnight Black", vin: "4T1G11AK0KU801829",
+      vin: "4T1G11AK0KU801829",
       licensePlate: "TX-XB4921", engine: "2.5L 4-Cyl",
       fuelType: "gasoline", mileageLastSeen: 68450,
       mileageUpdatedAt: new Date(),
@@ -278,7 +278,7 @@ async function main() {
       organizationId: org.id,
       customerId: customer1.id,
       year: 2016, make: "Honda", model: "Civic", trim: "LX",
-      color: "Silver", vin: "2HGFC2F5XGH204411",
+      vin: "2HGFC2F5XGH204411",
       fuelType: "gasoline", mileageLastSeen: 98140,
     },
   });
@@ -395,7 +395,7 @@ async function main() {
       organizationId: org.id,
       customerId: customer6.id,
       year: 2022, make: "Tesla", model: "Model 3", trim: "Long Range",
-      color: "Pearl White", fuelType: "electric", mileageLastSeen: 18200,
+      fuelType: "electric", mileageLastSeen: 18200,
     },
   });
 
